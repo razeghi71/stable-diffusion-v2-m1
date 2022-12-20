@@ -12,6 +12,9 @@ from pytorch_lightning import seed_everything
 from torch import autocast
 from contextlib import nullcontext
 from imwatermark import WatermarkEncoder
+import sys
+
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
 from ldm.util import instantiate_from_config
 from ldm.models.diffusion.ddim import DDIMSampler
@@ -19,6 +22,14 @@ from ldm.models.diffusion.plms import PLMSSampler
 from ldm.models.diffusion.dpm_solver import DPMSolverSampler
 
 torch.set_grad_enabled(False)
+
+def get_device():
+    if(torch.cuda.is_available()):
+        return torch.device("cuda")
+    elif(torch.backends.mps.is_available()):
+        return torch.device("mps")
+    else:
+        return torch.device("cpu")
 
 def chunk(it, size):
     it = iter(it)
@@ -40,7 +51,7 @@ def load_model_from_config(config, ckpt, verbose=False):
         print("unexpected keys:")
         print(u)
 
-    model.cuda()
+    model.to(get_device())
     model.eval()
     return model
 
@@ -189,7 +200,7 @@ def main(opt):
     config = OmegaConf.load(f"{opt.config}")
     model = load_model_from_config(config, f"{opt.ckpt}")
 
-    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+    device = get_device()
     model = model.to(device)
 
     if opt.plms:
@@ -229,7 +240,9 @@ def main(opt):
 
     start_code = None
     if opt.fixed_code:
-        start_code = torch.randn([opt.n_samples, opt.C, opt.H // opt.f, opt.W // opt.f], device=device)
+        start_code = torch.randn(
+            [opt.n_samples, opt.C, opt.H // opt.f, opt.W // opt.f], device="cpu"
+        ).to(torch.device(device))
 
     precision_scope = autocast if opt.precision == "autocast" else nullcontext
     with torch.no_grad(), \
